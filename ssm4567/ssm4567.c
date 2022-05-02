@@ -46,7 +46,7 @@ DriverEntry(
 NTSTATUS ssm4567_reg_read(
 	_In_ PSSM4567_CONTEXT pDevice,
 	uint8_t reg,
-	unsigned int* data
+	uint8_t* data
 ) {
 	uint8_t raw_data = 0;
 	NTSTATUS status = SpbXferDataSynchronously(&pDevice->I2CContext, &reg, sizeof(uint8_t), &raw_data, sizeof(uint8_t));
@@ -57,7 +57,7 @@ NTSTATUS ssm4567_reg_read(
 NTSTATUS ssm4567_reg_write(
 	_In_ PSSM4567_CONTEXT pDevice,
 	uint8_t reg,
-	unsigned int data
+	uint8_t data
 ) {
 	uint8_t buf[2];
 	buf[0] = reg;
@@ -68,10 +68,10 @@ NTSTATUS ssm4567_reg_write(
 NTSTATUS ssm4567_reg_update(
 	_In_ PSSM4567_CONTEXT pDevice,
 	uint8_t reg,
-	unsigned int mask,
-	unsigned int val
+	uint8_t mask,
+	uint8_t val
 ) {
-	unsigned int tmp = 0, orig = 0;
+	uint8_t tmp = 0, orig = 0;
 
 	NTSTATUS status = ssm4567_reg_read(pDevice, reg, &orig);
 	if (!NT_SUCCESS(status)) {
@@ -749,7 +749,7 @@ Status
 	}
 
 	unsigned int rate = 48000; //48Khz 24 bit for SST
-	unsigned int format = SSM4567_DAC_FS_32000_48000;
+	uint8_t format = SSM4567_DAC_FS_32000_48000;
 	if (rate >= 8000 && rate <= 12000)
 		format = SSM4567_DAC_FS_8000_12000;
 	else if (rate >= 16000 && rate <= 24000)
@@ -768,7 +768,7 @@ Status
 	}
 
 	//Set TDM Slot
-	int slot = pDevice->UID;
+	uint8_t slot = (uint8_t)pDevice->UID;
 	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_2, SSM4567_SAI_CTRL_2_AUTO_SLOT | SSM4567_SAI_CTRL_2_TDM_SLOT_MASK, SSM4567_SAI_CTRL_2_TDM_SLOT(slot));
 	if (!NT_SUCCESS(status)) {
 		return status;
@@ -875,9 +875,7 @@ Ssm4567EvtDeviceAdd(
 	WDF_IO_QUEUE_CONFIG           queueConfig;
 	WDF_OBJECT_ATTRIBUTES         attributes;
 	WDFDEVICE                     device;
-	WDF_INTERRUPT_CONFIG interruptConfig;
 	WDFQUEUE                      queue;
-	UCHAR                         minorFunction;
 	PSSM4567_CONTEXT               devContext;
 
 	UNREFERENCED_PARAMETER(Driver);
