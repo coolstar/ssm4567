@@ -72,6 +72,38 @@ typedef struct _IntcSSTArg
 }  IntcSSTArg, * PIntcSSTArg;
 #pragma pack(pop)
 
+typedef enum {
+	CSAudioEndpointTypeDSP,
+	CSAudioEndpointTypeSpeaker,
+	CSAudioEndpointTypeHeadphone,
+	CSAudioEndpointTypeMicArray,
+	CSAudioEndpointTypeMicJack
+} CSAudioEndpointType;
+
+typedef enum {
+	CSAudioEndpointRegister,
+	CSAudioEndpointStart,
+	CSAudioEndpointStop,
+	CSAudioEndpointOverrideFormat
+} CSAudioEndpointRequest;
+
+typedef struct CSAUDIOFORMATOVERRIDE {
+	UINT16 channels;
+	UINT16 frequency;
+	UINT16 bitsPerSample;
+	UINT16 validBitsPerSample;
+	BOOL force32BitOutputContainer;
+} CsAudioFormatOverride;
+
+typedef struct CSAUDIOARG {
+	UINT32 argSz;
+	CSAudioEndpointType endpointType;
+	CSAudioEndpointRequest endpointRequest;
+	union {
+		CsAudioFormatOverride formatOverride;
+	};
+} CsAudioArg, * PCsAudioArg;
+
 typedef struct _SSM4567_CONTEXT
 {
 
@@ -90,6 +122,11 @@ typedef struct _SSM4567_CONTEXT
 	WDFWORKITEM IntcSSTWorkItem;
 	PCALLBACK_OBJECT IntcSSTHwMultiCodecCallback;
 	PVOID IntcSSTCallbackObj;
+
+	PCALLBACK_OBJECT CSAudioAPICallback;
+	PVOID CSAudioAPICallbackObj;
+
+	BOOL CSAudioManaged;
 
 	IntcSSTArg sstArgTemp;
 

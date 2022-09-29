@@ -195,6 +195,7 @@ Exit:
 }
 
 int IntCSSTArg2 = 1;
+int CsAudioArg2 = 1;
 
 VOID
 UpdateIntcSSTStatus(
@@ -480,6 +481,176 @@ IntcSSTCallbackFunction(
 }
 
 NTSTATUS
+StartCodec(
+	PSSM4567_CONTEXT pDevice
+) {
+	NTSTATUS status = STATUS_SUCCESS;
+	if (!pDevice->SetUID) {
+		status = STATUS_INVALID_DEVICE_STATE;
+		return status;
+	}
+
+	//Power on Amp
+	status = ssm4567_set_power(pDevice, TRUE);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Set Format
+	uint8_t fmt = pDevice->CSAudioManaged ? SSM4567_SAI_CTRL_1_BCLK : SSM4567_SAI_CTRL_1_BCLK | SSM4567_SAI_CTRL_1_TDM;
+
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_1,
+		SSM4567_SAI_CTRL_1_BCLK |
+		SSM4567_SAI_CTRL_1_FSYNC |
+		SSM4567_SAI_CTRL_1_LJ |
+		SSM4567_SAI_CTRL_1_TDM |
+		SSM4567_SAI_CTRL_1_PDM,
+		fmt);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	unsigned int rate = 48000; //48Khz 24 bit for SST
+	uint8_t format = SSM4567_DAC_FS_32000_48000;
+	if (rate >= 8000 && rate <= 12000)
+		format = SSM4567_DAC_FS_8000_12000;
+	else if (rate >= 16000 && rate <= 24000)
+		format = SSM4567_DAC_FS_16000_24000;
+	else if (rate >= 32000 && rate <= 48000)
+		format = SSM4567_DAC_FS_32000_48000;
+	else if (rate >= 64000 && rate <= 96000)
+		format = SSM4567_DAC_FS_64000_96000;
+	else if (rate >= 128000 && rate <= 192000)
+		format = SSM4567_DAC_FS_128000_192000;
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL,
+		SSM4567_DAC_FS_MASK,
+		format);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Set TDM Slot
+	uint8_t slot = (uint8_t)pDevice->UID;
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_2, SSM4567_SAI_CTRL_2_AUTO_SLOT | SSM4567_SAI_CTRL_2_TDM_SLOT_MASK, SSM4567_SAI_CTRL_2_TDM_SLOT(slot));
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Set width to 48
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_1, SSM4567_SAI_CTRL_1_TDM_BLCKS_MASK, SSM4567_SAI_CTRL_1_TDM_BLCKS_48);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Ensure unmuted
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL, SSM4567_DAC_MUTE, 0);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Enable high pass filter & low power mode
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL, SSM4567_DAC_HPF | SSM4567_DAC_LPM, SSM4567_DAC_HPF | SSM4567_DAC_LPM);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Enable Amp Boost
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_POWER_CTRL, SSM4567_POWER_BOOST_PWDN, 0);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Disable Battery/Voltage/Current Sense
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_POWER_CTRL,
+		SSM4567_POWER_BSNS_PWDN |
+		SSM4567_POWER_VSNS_PWDN |
+		SSM4567_POWER_ISNS_PWDN,
+		SSM4567_POWER_BSNS_PWDN |
+		SSM4567_POWER_VSNS_PWDN |
+		SSM4567_POWER_ISNS_PWDN);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	//Set Default Volume
+	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_VOLUME, 0xFF, 0x40); //0x40 = 0 db
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	/*for (int i = 0; i <= 0x16; i++) {
+		unsigned int data;
+		if (NT_SUCCESS(ssm4567_reg_read(pDevice, i, &data))) {
+			DbgPrint("Reg 0x%x: 0x%x\n", i, data);
+		}
+	}*/
+
+	pDevice->DevicePoweredOn = TRUE;
+	return status;
+}
+
+NTSTATUS
+StopCodec(
+	PSSM4567_CONTEXT pDevice
+) {
+	NTSTATUS status;
+	status = ssm4567_set_power(pDevice, FALSE);
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+
+	pDevice->DevicePoweredOn = FALSE;
+	return status;
+}
+
+VOID
+CSAudioRegisterEndpoint(
+	PSSM4567_CONTEXT pDevice
+) {
+	CsAudioArg arg;
+	RtlZeroMemory(&arg, sizeof(CsAudioArg));
+	arg.argSz = sizeof(CsAudioArg);
+	arg.endpointType = CSAudioEndpointTypeSpeaker;
+	arg.endpointRequest = CSAudioEndpointRegister;
+	ExNotifyCallback(pDevice->CSAudioAPICallback, &arg, &CsAudioArg2);
+}
+
+VOID
+CsAudioCallbackFunction(
+	IN PSSM4567_CONTEXT  pDevice,
+	CsAudioArg* arg,
+	PVOID Argument2
+) {
+	if (!pDevice) {
+		return;
+	}
+
+	if (Argument2 == &CsAudioArg2) {
+		return;
+	}
+
+	pDevice->CSAudioManaged = TRUE;
+
+	CsAudioArg localArg;
+	RtlZeroMemory(&localArg, sizeof(CsAudioArg));
+	RtlCopyMemory(&localArg, arg, min(arg->argSz, sizeof(CsAudioArg)));
+
+	if (localArg.endpointType == CSAudioEndpointTypeDSP && localArg.endpointRequest == CSAudioEndpointRegister) {
+		CSAudioRegisterEndpoint(pDevice);
+	}
+	else if (localArg.endpointType != CSAudioEndpointTypeSpeaker) {
+		return;
+	}
+
+	if (localArg.endpointRequest == CSAudioEndpointStop) {
+		StopCodec(pDevice);
+	}
+	if (localArg.endpointRequest == CSAudioEndpointStart) {
+		StartCodec(pDevice);
+	}
+}
+
+NTSTATUS
 OnPrepareHardware(
 	_In_  WDFDEVICE     FxDevice,
 	_In_  WDFCMRESLIST  FxResourcesRaw,
@@ -647,6 +818,16 @@ Status
 		pDevice->IntcSSTHwMultiCodecCallback = NULL;
 	}
 
+	if (pDevice->CSAudioAPICallbackObj) {
+		ExUnregisterCallback(pDevice->CSAudioAPICallbackObj);
+		pDevice->CSAudioAPICallbackObj = NULL;
+	}
+
+	if (pDevice->CSAudioAPICallback) {
+		ObfDereferenceObject(pDevice->CSAudioAPICallback);
+		pDevice->CSAudioAPICallback = NULL;
+	}
+
 	return status;
 }
 
@@ -693,6 +874,36 @@ OnSelfManagedIoInit(
 		UpdateIntcSSTStatus(pDevice, 0);
 	}
 
+	// CS Audio Callback
+
+	UNICODE_STRING CSAudioCallbackAPI;
+	RtlInitUnicodeString(&CSAudioCallbackAPI, L"\\CallBack\\CsAudioCallbackAPI");
+
+
+	OBJECT_ATTRIBUTES attributes;
+	InitializeObjectAttributes(&attributes,
+		&CSAudioCallbackAPI,
+		OBJ_KERNEL_HANDLE | OBJ_OPENIF | OBJ_CASE_INSENSITIVE | OBJ_PERMANENT,
+		NULL,
+		NULL
+	);
+	status = ExCreateCallback(&pDevice->CSAudioAPICallback, &attributes, TRUE, TRUE);
+	if (!NT_SUCCESS(status)) {
+
+		return status;
+	}
+
+	pDevice->CSAudioAPICallbackObj = ExRegisterCallback(pDevice->CSAudioAPICallback,
+		CsAudioCallbackFunction,
+		pDevice
+	);
+	if (!pDevice->CSAudioAPICallbackObj) {
+
+		return STATUS_NO_CALLBACK_ACTIVE;
+	}
+
+	CSAudioRegisterEndpoint(pDevice);
+
 	return status;
 }
 
@@ -723,107 +934,9 @@ Status
 	PSSM4567_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	if (!pDevice->SetUID) {
-		status = STATUS_INVALID_DEVICE_STATE;
-		return status;
+	if (!pDevice->CSAudioManaged) {
+		status = StartCodec(pDevice);
 	}
-
-	//Power on Amp
-	status = ssm4567_set_power(pDevice, TRUE);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Set Format
-	uint8_t fmt = SSM4567_SAI_CTRL_1_BCLK | SSM4567_SAI_CTRL_1_TDM;
-
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_1,
-		SSM4567_SAI_CTRL_1_BCLK |
-		SSM4567_SAI_CTRL_1_FSYNC |
-		SSM4567_SAI_CTRL_1_LJ |
-		SSM4567_SAI_CTRL_1_TDM |
-		SSM4567_SAI_CTRL_1_PDM,
-		fmt);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	unsigned int rate = 48000; //48Khz 24 bit for SST
-	uint8_t format = SSM4567_DAC_FS_32000_48000;
-	if (rate >= 8000 && rate <= 12000)
-		format = SSM4567_DAC_FS_8000_12000;
-	else if (rate >= 16000 && rate <= 24000)
-		format = SSM4567_DAC_FS_16000_24000;
-	else if (rate >= 32000 && rate <= 48000)
-		format = SSM4567_DAC_FS_32000_48000;
-	else if (rate >= 64000 && rate <= 96000)
-		format = SSM4567_DAC_FS_64000_96000;
-	else if (rate >= 128000 && rate <= 192000)
-		format = SSM4567_DAC_FS_128000_192000;
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL,
-		SSM4567_DAC_FS_MASK,
-		format);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Set TDM Slot
-	uint8_t slot = (uint8_t)pDevice->UID;
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_2, SSM4567_SAI_CTRL_2_AUTO_SLOT | SSM4567_SAI_CTRL_2_TDM_SLOT_MASK, SSM4567_SAI_CTRL_2_TDM_SLOT(slot));
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Set width to 48
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_1, SSM4567_SAI_CTRL_1_TDM_BLCKS_MASK, SSM4567_SAI_CTRL_1_TDM_BLCKS_48);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Ensure unmuted
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL, SSM4567_DAC_MUTE, 0);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Enable high pass filter & low power mode
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_CTRL, SSM4567_DAC_HPF | SSM4567_DAC_LPM, SSM4567_DAC_HPF | SSM4567_DAC_LPM);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Enable Amp Boost
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_POWER_CTRL, SSM4567_POWER_BOOST_PWDN, 0);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Disable Battery/Voltage/Current Sense
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_POWER_CTRL,
-		SSM4567_POWER_BSNS_PWDN |
-		SSM4567_POWER_VSNS_PWDN |
-		SSM4567_POWER_ISNS_PWDN,
-		SSM4567_POWER_BSNS_PWDN |
-		SSM4567_POWER_VSNS_PWDN |
-		SSM4567_POWER_ISNS_PWDN);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	//Set Default Volume
-	status = ssm4567_reg_update(pDevice, SSM4567_REG_DAC_VOLUME, 0xFF, 0x40); //0x40 = 0 db
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	/*for (int i = 0; i <= 0x16; i++) {
-		unsigned int data;
-		if (NT_SUCCESS(ssm4567_reg_read(pDevice, i, &data))) {
-			DbgPrint("Reg 0x%x: 0x%x\n", i, data);
-		}
-	}*/
-
-	pDevice->DevicePoweredOn = TRUE;
 
 	return status;
 }
@@ -855,12 +968,7 @@ Status
 	PSSM4567_CONTEXT pDevice = GetDeviceContext(FxDevice);
 	NTSTATUS status = STATUS_SUCCESS;
 
-	status = ssm4567_set_power(pDevice, FALSE);
-	if (!NT_SUCCESS(status)) {
-		return status;
-	}
-
-	pDevice->DevicePoweredOn = FALSE;
+	status = StopCodec(pDevice);
 
 	return STATUS_SUCCESS;
 }
@@ -945,6 +1053,7 @@ Ssm4567EvtDeviceAdd(
 	devContext = GetDeviceContext(device);
 
 	devContext->FxDevice = device;
+	devContext->CSAudioManaged = FALSE;
 
 	WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchManual);
 
