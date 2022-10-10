@@ -65,6 +65,6 @@ LoadOrderGroup = Base
 [Strings]
 SPSVCINST_ASSOCSERVICE= 0x00000002
 StdMfg                 = "CoolStar"
-DiskId1                = "SSM4567 Installation Disk #1"
-ssm4567.DeviceDesc = "SSM4567 Amplifier"
-ssm4567.SVCDESC    = "SSM4567 Service"
+DiskId1                = "Analog Devices SSM4567 Installation Disk #1"
+ssm4567.DeviceDesc = "Analog Devices SSM4567 Amplifier"
+ssm4567.SVCDESC    = "Analog Devices SSM4567 Service"

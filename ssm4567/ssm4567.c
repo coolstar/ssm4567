@@ -497,7 +497,7 @@ StartCodec(
 	}
 
 	//Set Format
-	uint8_t fmt = pDevice->CSAudioManaged ? SSM4567_SAI_CTRL_1_BCLK : SSM4567_SAI_CTRL_1_BCLK | SSM4567_SAI_CTRL_1_TDM;
+	uint8_t fmt = SSM4567_SAI_CTRL_1_BCLK | SSM4567_SAI_CTRL_1_TDM;
 
 	status = ssm4567_reg_update(pDevice, SSM4567_REG_SAI_CTRL_1,
 		SSM4567_SAI_CTRL_1_BCLK |
@@ -889,7 +889,6 @@ OnSelfManagedIoInit(
 	);
 	status = ExCreateCallback(&pDevice->CSAudioAPICallback, &attributes, TRUE, TRUE);
 	if (!NT_SUCCESS(status)) {
-
 		return status;
 	}
 
