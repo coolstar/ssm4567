@@ -129,6 +129,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="registers.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="spb.h" />
     <ClInclude Include="stdint.h" />
     <ClInclude Include="trace.h" />
@@ -137,6 +138,9 @@
   <ItemGroup>
     <ClCompile Include="spb.c" />
     <ClCompile Include="ssm4567.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ssm4567.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
